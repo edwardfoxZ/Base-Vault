@@ -10,6 +10,7 @@ contract Vault {
     // Token
     IERC20 public token;
 
+    // Token price per wei
     uint256 public pricePerTokenWei = 1e11;
 
     uint256 public unlockPrice;
@@ -36,13 +37,24 @@ contract Vault {
     }
 
     /**
-     * @dev user can buy the tokens from here.
+     * @dev Allows the owner to fund the contract with tokens.
+     */
+    function fund(uint256 _fundAmount) external onlyOwner {
+        bool success = token.transferFrom(
+            msg.sender,
+            address(this),
+            _fundAmount
+        );
+        require(success, "Failed to fund the contract");
+    }
+
+    /**
+     * @dev User can buy the tokens from here.
      */
     function buy() external payable {
         require(msg.value > 0, "Send enough ETH");
 
         uint256 tokensToBuy = (msg.value * 1e18) / pricePerTokenWei;
-
         require(tokensToBuy > 0, "Zero tokens");
 
         if (!alreadyAdded[msg.sender]) {
@@ -56,7 +68,7 @@ contract Vault {
             );
             alreadyAdded[msg.sender] = true;
         } else {
-            for (uint i = 0; i < buyers.length; i++) {
+            for (uint256 i = 0; i < buyers.length; i++) {
                 if (buyers[i].buyer == msg.sender) {
                     buyers[i].amountBought += tokensToBuy;
                 }
@@ -68,13 +80,24 @@ contract Vault {
     }
 
     /**
-     * @dev if user don't get token yet they can claim first.
+     * @dev If user hasn't received tokens yet, they can claim first.
      */
     function claim() external {
+        bool isEligible = false;
         require(totalBought[msg.sender] > 0, "Not enough token");
 
+        for (uint256 i = 0; i < buyers.length; i++) {
+            if (buyers[i].buyer == msg.sender && buyers.length <= 1000) {
+                isEligible = true;
+            } else {
+                isEligible = false;
+            }
+        }
+
+        require(isEligible, "You are not eligible");
+
         uint256 claimable = getClaimableAmount(msg.sender);
-        require(claimable > 0, "No tokens unlock to claim");
+        require(claimable > 0, "No tokens unlocked to claim");
 
         totalUnlocked[msg.sender] += claimable;
 
@@ -88,7 +111,7 @@ contract Vault {
     }
 
     // Admin: withdraw ETH
-    function withdrawETH() external {
+    function withdrawETH() external onlyOwner {
         payable(owner).transfer(address(this).balance);
     }
 
